@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+vllm/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model weights (download at runtime)
+*.bin
+*.safetensors
+*.pt
+*.onnx
+
+# Environment
+.env
+.env.local
+
+# Samples (add your own)
+samples/
+
+# Claude
+.claude/
