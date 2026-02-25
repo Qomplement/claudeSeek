@@ -33,5 +33,12 @@ Thumbs.db
 # Samples (add your own)
 samples/
 
+# Node.js
+node_modules/
+.docusaurus/
+website/build/
+website/.docusaurus/
+app/dist/
+
 # Claude
 .claude/

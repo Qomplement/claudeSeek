@@ -2,6 +2,43 @@
 
 > Making [DeepSeek-OCR-2](https://huggingface.co/deepseek-ai/DeepSeek-OCR-2) run on the latest [vLLM](https://docs.vllm.ai/en/latest/) inference engine.
 
+## Local Preview
+
+### Docs Site (Docusaurus)
+
+```bash
+cd website && npm install && npm start
+# Opens at http://localhost:3000
+```
+
+### OCR Web App (React + Vite)
+
+```bash
+cd app && npm install && npm run dev
+# Opens at http://localhost:5173
+# Requires vLLM server on port 8000 for full functionality
+```
+
+### vLLM Backend (required for OCR app)
+
+```bash
+bash scripts/start_server.sh
+# Starts vLLM server at http://localhost:8000
+```
+
+## Project Structure
+
+```
+claudeSeek/
+├── website/          # Docusaurus docs site (localhost:3000)
+├── app/              # React + Vite OCR web app (localhost:5173)
+├── docs/             # Source markdown documentation
+├── examples/         # Python inference examples
+├── scripts/          # Shell scripts (setup, server)
+├── Dockerfile        # vLLM server container
+└── src/              # Future Python code
+```
+
 ## Table of Contents
 
 - [Overview](#overview)
