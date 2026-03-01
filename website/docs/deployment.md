@@ -6,69 +6,59 @@ sidebar_position: 4
 
 # Deployment Guide
 
+## Version Requirements (Tested & Working)
+
+Exact versions tested end-to-end on AWS EC2 g5.xlarge (NVIDIA A10G, 24GB VRAM).
+
+### Core Stack
+
+| Component | Version | Notes |
+|-----------|---------|-------|
+| **Python** | 3.10.12 | 3.10+ required by vLLM |
+| **vLLM** | 0.16.0 | First version with native `DeepseekOCR2ForCausalLM` |
+| **transformers** | 4.57.6 | vLLM 0.16.0 requires `>=4.56.0` |
+| **PyTorch** | 2.9.1+cu128 | Installed by vLLM |
+| **CUDA (runtime)** | 12.8 | Via PyTorch wheel |
+| **NVIDIA Driver** | 580.126.09 | Must support CUDA 12.8+ |
+
+### Key Dependencies (auto-installed by vLLM)
+
+| Package | Version |
+|---------|---------|
+| tokenizers | 0.22.2 |
+| huggingface_hub | 0.36.2 |
+| safetensors | 0.7.0 |
+| pillow | 12.1.1 |
+| numpy | 2.2.6 |
+| triton | 3.5.1 |
+| xformers | 0.0.28.post3 |
+
+### Hardware Tested
+
+| Component | Spec |
+|-----------|------|
+| **GPU** | NVIDIA A10G (24 GB, compute 8.6) |
+| **Instance** | AWS g5.xlarge (4 vCPU, 16 GB RAM) |
+| **OS** | Ubuntu 22.04.5 LTS |
+| **AMI** | ami-0669ac5db8b1292fe |
+
+### Version Compatibility Notes
+
+- **vLLM < 0.16.0** — No `DeepseekOCR2ForCausalLM` in registry. Must register manually.
+- **transformers >= 4.48** — Accuracy bug: `_update_causal_mask()` removed, breaks Visual Causal Flow. Model hallucinates text. [PR #33389](https://github.com/vllm-project/vllm/pull/33389) not merged yet.
+- **transformers >= 4.56.0** — Required by vLLM 0.16.0. Cannot pin to 4.46.3.
+- **CUDA 12.x** — Required. No Apple Silicon / AMD GPU support.
+
 ## Quick Start
 
-### Environment Setup
-
 ```bash
-conda create -n deepseek-ocr2 python=3.12.9
-conda activate deepseek-ocr2
+# Install vLLM (installs PyTorch, transformers, everything)
+pip3 install vllm==0.16.0
 
-pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
-    --index-url https://download.pytorch.org/whl/cu118
+# Verify
+python3 -c "from vllm import ModelRegistry; assert 'DeepseekOCR2ForCausalLM' in ModelRegistry.get_supported_archs(); print('OK')"
 
-# Install vLLM 0.16+ (has native DeepSeek-OCR-2 support)
-pip install 'vllm>=0.16'
-
-pip install flash-attn==2.7.3 --no-build-isolation
-```
-
-### Verify
-
-```python
-from vllm import ModelRegistry
-assert "DeepseekOCR2ForCausalLM" in ModelRegistry.get_supported_archs()
-```
-
-## Offline Batch Processing
-
-```python
-from vllm import LLM, SamplingParams
-from vllm.model_executor.models.deepseek_ocr import NGramPerReqLogitsProcessor
-
-llm = LLM(
-    model="deepseek-ai/DeepSeek-OCR-2",
-    trust_remote_code=True,
-    dtype="bfloat16",
-    max_model_len=8192,
-    gpu_memory_utilization=0.90,
-    enforce_eager=True,
-    enable_prefix_caching=False,
-    logits_processors=[NGramPerReqLogitsProcessor],
-)
-
-sampling_params = SamplingParams(
-    temperature=0.0,
-    max_tokens=8192,
-    skip_special_tokens=False,
-    extra_args={
-        "ngram_size": 30,
-        "window_size": 300,
-        "whitelist_token_ids": [128821, 128822],
-    },
-)
-
-prompt = "<image>\nConvert the document to markdown."
-result = llm.generate(
-    {"prompt": prompt, "multi_modal_data": {"image": "document.png"}},
-    sampling_params=sampling_params,
-)
-print(result[0].outputs[0].text)
-```
-
-## Online API Server
-
-```bash
+# Start server (first run downloads ~6 GB model)
 python3 -m vllm.entrypoints.openai.api_server \
     --model deepseek-ai/DeepSeek-OCR-2 \
     --trust-remote-code \
@@ -81,9 +71,15 @@ python3 -m vllm.entrypoints.openai.api_server \
     --logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor
 ```
 
-> **Important:** The logits processor module is `deepseek_ocr` (not `deepseek_ocr2`) and the flag uses hyphens (`--logits-processors`).
+## AWS EC2 Setup
 
-### API Call Example
+1. Launch **g5.xlarge** with AMI `ami-0669ac5db8b1292fe` (Ubuntu 22.04 + NVIDIA drivers)
+2. Open ports 22 (SSH) and 8000 (API)
+3. SSH in, `pip3 install vllm==0.16.0`, start server
+
+## API Usage
+
+### Python (openai SDK)
 
 ```python
 from openai import OpenAI
@@ -121,67 +117,47 @@ print(response.choices[0].message.content)
 ```dockerfile
 FROM vllm/vllm-openai:latest
 EXPOSE 8000
-ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server", \
-    "--model", "deepseek-ai/DeepSeek-OCR-2", \
-    "--trust-remote-code", "--dtype", "bfloat16", \
-    "--max-model-len", "8192", "--gpu-memory-utilization", "0.90", \
-    "--enforce-eager", "--no-enable-prefix-caching", \
-    "--host", "0.0.0.0", "--port", "8000", \
-    "--logits-processors", "vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor"]
+CMD ["python3", "-m", "vllm.entrypoints.openai.api_server", \
+     "--model", "deepseek-ai/DeepSeek-OCR-2", \
+     "--trust-remote-code", "--dtype", "bfloat16", \
+     "--max-model-len", "8192", "--gpu-memory-utilization", "0.90", \
+     "--enforce-eager", "--no-enable-prefix-caching", \
+     "--host", "0.0.0.0", "--port", "8000", \
+     "--logits-processors", "vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor"]
 ```
 
 ```bash
-# ALWAYS build for amd64 when deploying to cloud
 docker build --platform linux/amd64 -t deepseek-ocr2-vllm .
 docker run --gpus all -p 8000:8000 deepseek-ocr2-vllm
 ```
 
-## GPU Memory Requirements
-
-| Configuration | VRAM Required |
-|---------------|---------------|
-| bf16, single GPU | ~8-10 GB |
-| bf16 + KV cache (8192 ctx) | ~12-14 GB |
-| bf16 + 0.90 util | ~20 GB (g5.xlarge A10G tested) |
-| Multi-GPU (TP=2) | ~8 GB per GPU |
-
-## Tested Performance (g5.xlarge / A10G 24GB)
+## Performance (g5.xlarge / A10G)
 
 | Metric | Value |
 |--------|-------|
 | Throughput | ~61 tok/s |
-| Page processing time | 16-26s per page |
-| 2-page invoice total | ~42s |
+| Per page | 16-26 seconds |
+| 2-page invoice | ~42 seconds |
+| Model load | ~11 seconds |
+| GPU memory | ~21 GB |
 
-## Prompt Templates
+## Server Arguments
 
-| Task | Prompt |
-|------|--------|
-| Document to Markdown | `Convert the document to markdown.` |
-| Markdown with bounding boxes | `<\|grounding\|>Convert the document to markdown.` |
-| Plain text OCR | `Convert the document to text.` |
-| Free OCR question | `What is the total amount on this invoice?` |
+| Argument | Value | Description |
+|----------|-------|-------------|
+| `--model` | `deepseek-ai/DeepSeek-OCR-2` | HuggingFace model ID |
+| `--trust-remote-code` | flag | Required for custom HF code |
+| `--dtype` | `bfloat16` | Model precision |
+| `--max-model-len` | `8192` | Max context (model max) |
+| `--gpu-memory-utilization` | `0.90` | VRAM fraction |
+| `--enforce-eager` | flag | Disables CUDA graphs |
+| `--no-enable-prefix-caching` | flag | OCR doesn't reuse prefixes |
+| `--logits-processors` | `vllm...deepseek_ocr:NGramPerReqLogitsProcessor` | Prevents repetition |
 
-## Configuration Reference
+## Request Parameters (via `vllm_xargs`)
 
-### Engine Arguments
-
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `--trust-remote-code` | required | Model uses custom HF code |
-| `--dtype bfloat16` | recommended | Model precision |
-| `--max-model-len 8192` | 8192 | Max context length |
-| `--gpu-memory-utilization` | 0.90 | Fraction of GPU memory |
-| `--enforce-eager` | recommended | Disable CUDA graphs for stability |
-| `--no-enable-prefix-caching` | recommended | OCR doesn't benefit |
-| `--logits-processors` | required | Must include NGramPerReqLogitsProcessor |
-
-### Sampling Parameters (via `vllm_xargs`)
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `temperature` | 0.0 | Greedy decoding for OCR |
-| `max_tokens` | 8192 | Max output tokens |
-| `ngram_size` | 20 | N-gram repetition check size (official: 20 for images/PDFs, 40 for batch) |
-| `window_size` | 90 | Sliding window (official: 90 for images, 50 for PDFs) |
-| `whitelist_token_ids` | [128821, 128822] | Table tokens (`<td>`, `</td>`) exempt from ban |
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `ngram_size` | 20 | Official: 20 for images, 40 for batch |
+| `window_size` | 90 | Official: 90 for images, 50 for PDFs |
+| `whitelist_token_ids` | [128821, 128822] | `<td>`, `</td>` exempt from ban |
