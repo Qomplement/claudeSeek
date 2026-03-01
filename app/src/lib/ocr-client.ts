@@ -14,7 +14,7 @@ export interface OcrResponse {
   }
 }
 
-const DEFAULT_PROMPT = '<|grounding|>Convert the document to markdown.'
+const DEFAULT_PROMPT = 'Convert the document to markdown.'
 
 export async function runOcr(request: OcrRequest): Promise<OcrResponse> {
   const dataUrl = `data:${request.mimeType};base64,${request.imageBase64}`
@@ -30,11 +30,13 @@ export async function runOcr(request: OcrRequest): Promise<OcrResponse> {
         ],
       },
     ],
-    max_tokens: 8192,
+    max_tokens: 4096,
     temperature: 0.0,
-    ngram_size: 30,
-    window_size: 90,
-    whitelist_token_ids: [128821, 128822],
+    vllm_xargs: {
+      ngram_size: 30,
+      window_size: 300,
+      whitelist_token_ids: [128821, 128822],
+    },
   }
 
   const res = await fetch('/api/v1/chat/completions', {

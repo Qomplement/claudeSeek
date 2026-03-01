@@ -12,10 +12,11 @@ sidebar_position: 5
 
 `_update_causal_mask()` was removed from `Qwen2Model` in `transformers>=4.48`. This breaks the hybrid attention mask in `deepencoder2.py`, causing accuracy degradation.
 
+**Tested impact (vLLM 0.16.0 + transformers 4.57.6 on g5.xlarge / A10G):**
+The model can identify document structure (headers, tables, sections) but hallucinates specific text content. For example, on a Mexican CFDI invoice it correctly found the company name and table layout but invented bank names and account numbers.
+
 **Workaround:**
-```bash
-pip install transformers==4.46.3
-```
+vLLM 0.16.0 requires `transformers>=4.56.0`, so pinning to 4.46.3 is not possible with the latest vLLM. Wait for PR #33389 to merge.
 
 ## 2. BOS Token Missing in Chat Template
 
@@ -27,25 +28,42 @@ Update to a vLLM version that includes this PR.
 
 **Status:** By design (vLLM 0.11+)
 
-Per-request `logits_processors` in `SamplingParams` no longer works. Use `AdapterLogitsProcessor`:
+Per-request `logits_processors` in `SamplingParams` no longer works. Use the built-in `NGramPerReqLogitsProcessor`:
 
 ```python
-from vllm.v1.sample.logits_processor import AdapterLogitsProcessor
+from vllm.model_executor.models.deepseek_ocr import NGramPerReqLogitsProcessor
 
-class MyOCRLogitsProcessor(AdapterLogitsProcessor):
-    def is_argmax_invariant(self) -> bool:
-        return False
+# Register globally at engine init
+llm = LLM(
+    model="deepseek-ai/DeepSeek-OCR-2",
+    logits_processors=[NGramPerReqLogitsProcessor],
+)
 
-    def new_req_logits_processor(self, params):
-        ngram_size = params.extra_args.get("ngram_size")
-        if ngram_size is None:
-            return None
-        return NoRepeatNGramLogitsProcessor(
-            ngram_size=ngram_size,
-            window_size=params.extra_args.get("window_size", 90),
-            whitelist_token_ids=params.extra_args.get("whitelist_token_ids", set()),
-        )
+# Pass parameters per-request via extra_args
+sampling_params = SamplingParams(
+    extra_args={"ngram_size": 30, "window_size": 300, "whitelist_token_ids": [128821, 128822]}
+)
 ```
+
+**For the OpenAI-compatible API server:**
+
+```bash
+# Server flag (hyphens, not underscores; module is deepseek_ocr, not deepseek_ocr2)
+--logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor
+```
+
+```json
+// Client: use vllm_xargs in the request body
+{
+  "vllm_xargs": {
+    "ngram_size": 30,
+    "window_size": 300,
+    "whitelist_token_ids": [128821, 128822]
+  }
+}
+```
+
+> **Note:** Default `window_size=90` is too small for documents with large repeating sections. Use 300 for invoices/forms.
 
 ## 4. Initialization Order (vLLM v1)
 
@@ -65,17 +83,14 @@ engine = AsyncLLMEngine.from_engine_args(args)
 
 **Status:** Fixed — [PR #33165](https://github.com/vllm-project/vllm/pull/33165) (merged Feb 2, 2026)
 
-If you see `Model architectures ['DeepseekOCR2ForCausalLM'] are not supported`, your vLLM is too old. Options:
-1. Build vLLM from `main`
-2. Use out-of-tree registration
-3. Use bundled vLLM 0.8.5
+If you see `Model architectures ['DeepseekOCR2ForCausalLM'] are not supported`, your vLLM is too old. Use vLLM >= 0.16.
 
 ## 6. Prefix Caching Incompatibility
 
 Always disable prefix caching — OCR workloads don't reuse prefixes:
 
 ```bash
-vllm serve ... --no-enable-prefix-caching
+--no-enable-prefix-caching
 ```
 
 ## 7. Platform Mismatch (arm64 vs amd64)

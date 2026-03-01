@@ -8,14 +8,16 @@
 `_update_causal_mask()` was removed from `Qwen2Model` in `transformers>=4.48`. The DeepEncoder V2 component relies on this method to create its hybrid attention mask (bidirectional for image tokens, causal for query tokens). Without it, all tokens get the same mask, degrading OCR accuracy.
 
 **Symptoms:**
-- Garbled or inaccurate OCR output
+- Garbled or inaccurate OCR output (hallucinated content, wrong numbers)
 - Wrong reading order
 - Missing text segments
+- Model invents content not present in the document
+
+**Tested impact (vLLM 0.16.0 + transformers 4.57.6 on g5.xlarge / A10G):**
+The model can identify document structure (headers, tables, sections) but hallucinates specific text content. For example, on a Mexican CFDI invoice it correctly found the company name and table layout but invented bank names and account numbers.
 
 **Workaround:**
-```bash
-pip install transformers==4.46.3
-```
+vLLM 0.16.0 requires `transformers>=4.56.0`, so pinning to 4.46.3 is not possible with the latest vLLM. Wait for PR #33389 to merge, or build vLLM from a branch that includes the fix.
 
 **Proper fix (from PR #33389):**
 Auto-detect transformers version and use dual code paths — one for `<4.48` (uses `_update_causal_mask`) and one for `>=4.48` (custom mask construction).
@@ -47,8 +49,10 @@ sampling_params = SamplingParams(
 )
 ```
 
-**New way:**
+**New way (vLLM 0.16+):**
 ```python
+from vllm.model_executor.models.deepseek_ocr import NGramPerReqLogitsProcessor
+
 # Register globally at engine init
 llm = LLM(
     model="deepseek-ai/DeepSeek-OCR-2",
@@ -57,8 +61,29 @@ llm = LLM(
 
 # Pass parameters per-request via extra_args
 sampling_params = SamplingParams(
-    extra_args={"ngram_size": 30, "window_size": 90, "whitelist_token_ids": {128821, 128822}}
+    extra_args={"ngram_size": 30, "window_size": 300, "whitelist_token_ids": [128821, 128822]}
 )
+```
+
+**For the OpenAI-compatible API server:**
+```bash
+# Server: use --logits-processors (hyphens, not underscores)
+# Module is deepseek_ocr (not deepseek_ocr2)
+--logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor
+```
+
+```json
+// Client: use vllm_xargs (not extra_body or top-level params)
+{
+  "vllm_xargs": {
+    "ngram_size": 30,
+    "window_size": 300,
+    "whitelist_token_ids": [128821, 128822]
+  }
+}
+```
+
+> **Note:** Default `window_size=90` is too small for documents with large repeating sections (invoices, tables). Use `window_size=300` for better results.
 ```
 
 ---

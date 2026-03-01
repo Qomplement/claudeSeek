@@ -13,16 +13,11 @@ conda activate deepseek-ocr2
 pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
     --index-url https://download.pytorch.org/whl/cu118
 
-# Install vLLM (from source for latest OCR-2 support)
-git clone https://github.com/vllm-project/vllm.git
-cd vllm && pip install -e .
-cd ..
+# Install vLLM 0.16+ (has native DeepSeek-OCR-2 support)
+pip install 'vllm>=0.16'
 
 # Install flash-attention
 pip install flash-attn==2.7.3 --no-build-isolation
-
-# Pin transformers to avoid accuracy bug (until PR #33389 merges)
-pip install transformers==4.46.3
 ```
 
 ### Verify Installation
@@ -52,19 +47,21 @@ llm = LLM(
     dtype="bfloat16",
     max_model_len=8192,
     enforce_eager=False,
-    gpu_memory_utilization=0.75,
+    gpu_memory_utilization=0.90,
+    enforce_eager=True,
     enable_prefix_caching=False,
     tensor_parallel_size=1,  # increase for multi-GPU
+    logits_processors=["vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor"],
 )
 
 sampling_params = SamplingParams(
     temperature=0.0,
-    max_tokens=8192,
+    max_tokens=4096,
     skip_special_tokens=False,
     extra_args={
         "ngram_size": 30,
-        "window_size": 90,
-        "whitelist_token_ids": {128821, 128822},
+        "window_size": 300,
+        "whitelist_token_ids": [128821, 128822],
     },
 )
 
@@ -82,17 +79,20 @@ print(result[0].outputs[0].text)
 Best for serving OCR as an API endpoint.
 
 ```bash
-vllm serve deepseek-ai/DeepSeek-OCR-2 \
+python3 -m vllm.entrypoints.openai.api_server \
+    --model deepseek-ai/DeepSeek-OCR-2 \
     --trust-remote-code \
     --dtype bfloat16 \
     --max-model-len 8192 \
-    --gpu-memory-utilization 0.75 \
+    --gpu-memory-utilization 0.90 \
+    --enforce-eager \
     --no-enable-prefix-caching \
-    --tensor-parallel-size 1 \
     --host 0.0.0.0 \
     --port 8000 \
-    --logits_processors vllm.model_executor.models.deepseek_ocr2:NGramPerReqLogitsProcessor
+    --logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor
 ```
+
+> **Important:** The logits processor module is `deepseek_ocr` (not `deepseek_ocr2`) and the flag uses hyphens (`--logits-processors`). The `NGramPerReqLogitsProcessor` is critical for preventing repetitive output.
 
 #### Calling the API
 
@@ -126,9 +126,11 @@ response = client.chat.completions.create(
     max_tokens=8192,
     temperature=0.0,
     extra_body={
-        "ngram_size": 30,
-        "window_size": 90,
-        "whitelist_token_ids": [128821, 128822],
+        "vllm_xargs": {
+            "ngram_size": 30,
+            "window_size": 300,
+            "whitelist_token_ids": [128821, 128822],
+        },
     },
 )
 
@@ -155,9 +157,11 @@ curl -X POST http://localhost:8000/v1/chat/completions \
     ],
     "max_tokens": 8192,
     "temperature": 0.0,
-    "ngram_size": 30,
-    "window_size": 90,
-    "whitelist_token_ids": [128821, 128822]
+    "vllm_xargs": {
+      "ngram_size": 30,
+      "window_size": 300,
+      "whitelist_token_ids": [128821, 128822]
+    }
   }'
 ```
 
@@ -166,23 +170,22 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 ```dockerfile
 FROM vllm/vllm-openai:latest
 
-# Pin transformers for accuracy
-RUN pip install transformers==4.46.3
-
 # Download model at build time (optional, speeds up startup)
 RUN python -c "from huggingface_hub import snapshot_download; snapshot_download('deepseek-ai/DeepSeek-OCR-2')"
 
 EXPOSE 8000
 
-CMD ["vllm", "serve", "deepseek-ai/DeepSeek-OCR-2", \
+CMD ["python3", "-m", "vllm.entrypoints.openai.api_server", \
+     "--model", "deepseek-ai/DeepSeek-OCR-2", \
      "--trust-remote-code", \
      "--dtype", "bfloat16", \
      "--max-model-len", "8192", \
-     "--gpu-memory-utilization", "0.75", \
+     "--gpu-memory-utilization", "0.90", \
+     "--enforce-eager", \
      "--no-enable-prefix-caching", \
      "--host", "0.0.0.0", \
      "--port", "8000", \
-     "--logits_processors", "vllm.model_executor.models.deepseek_ocr2:NGramPerReqLogitsProcessor"]
+     "--logits-processors", "vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor"]
 ```
 
 ```bash
@@ -246,9 +249,9 @@ docker run --gpus all -p 8000:8000 deepseek-ocr2-vllm
 | `temperature` | 0.0 | Greedy decoding for OCR |
 | `max_tokens` | 8192 | Max output tokens |
 | `skip_special_tokens` | False | Keep structural tokens in output |
-| `ngram_size` | 30 | N-gram repetition check window |
-| `window_size` | 90 | Sliding window for repetition check |
-| `whitelist_token_ids` | {128821, 128822} | Table tokens exempt from n-gram ban |
+| `ngram_size` | 30 | N-gram repetition check size (via `vllm_xargs`) |
+| `window_size` | 300 | Sliding window for repetition check (default 90, use 300 for invoices) |
+| `whitelist_token_ids` | [128821, 128822] | Table tokens (`<td>`, `</td>`) exempt from n-gram ban |
 
 ---
 

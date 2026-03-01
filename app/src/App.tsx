@@ -12,7 +12,7 @@ export default function App() {
   const [status, setStatus] = useState<Status>('idle')
   const [result, setResult] = useState<OcrResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [prompt, setPrompt] = useState('<|grounding|>Convert the document to markdown.')
+  const [prompt, setPrompt] = useState('Convert the document to markdown.')
 
   const handleImageSelected = async (file: File) => {
     setStatus('loading')
@@ -61,11 +61,14 @@ export default function App() {
                 className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200"
                 disabled={status === 'loading'}
               >
+                <option value="Convert the document to markdown.">
+                  Document to Markdown
+                </option>
                 <option value="<|grounding|>Convert the document to markdown.">
-                  Document to Markdown (with layout)
+                  Markdown + Bounding Boxes (grounding)
                 </option>
                 <option value="Convert the document to text.">
-                  Plain text OCR (no layout)
+                  Plain text OCR
                 </option>
                 <option value="Extract all text from this image.">
                   Free text extraction
