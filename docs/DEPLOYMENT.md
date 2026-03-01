@@ -56,11 +56,11 @@ llm = LLM(
 
 sampling_params = SamplingParams(
     temperature=0.0,
-    max_tokens=4096,
+    max_tokens=8192,
     skip_special_tokens=False,
     extra_args={
-        "ngram_size": 30,
-        "window_size": 300,
+        "ngram_size": 20,
+        "window_size": 90,
         "whitelist_token_ids": [128821, 128822],
     },
 )
@@ -249,8 +249,8 @@ docker run --gpus all -p 8000:8000 deepseek-ocr2-vllm
 | `temperature` | 0.0 | Greedy decoding for OCR |
 | `max_tokens` | 8192 | Max output tokens |
 | `skip_special_tokens` | False | Keep structural tokens in output |
-| `ngram_size` | 30 | N-gram repetition check size (via `vllm_xargs`) |
-| `window_size` | 300 | Sliding window for repetition check (default 90, use 300 for invoices) |
+| `ngram_size` | 20 | N-gram repetition check size (via `vllm_xargs`). Official: 20 for images/PDFs, 40 for batch eval |
+| `window_size` | 90 | Sliding window for repetition check. Official: 90 for images, 50 for PDFs |
 | `whitelist_token_ids` | [128821, 128822] | Table tokens (`<td>`, `</td>`) exempt from n-gram ban |
 
 ---

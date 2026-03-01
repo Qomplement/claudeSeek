@@ -49,7 +49,7 @@ llm = LLM(
 
 sampling_params = SamplingParams(
     temperature=0.0,
-    max_tokens=4096,
+    max_tokens=8192,
     skip_special_tokens=False,
     extra_args={
         "ngram_size": 30,
@@ -103,12 +103,12 @@ response = client.chat.completions.create(
             {"type": "text", "text": "Convert the document to markdown."},
         ],
     }],
-    max_tokens=4096,
+    max_tokens=8192,
     temperature=0.0,
     extra_body={
         "vllm_xargs": {
-            "ngram_size": 30,
-            "window_size": 300,
+            "ngram_size": 20,
+            "window_size": 90,
             "whitelist_token_ids": [128821, 128822],
         },
     },
@@ -181,7 +181,7 @@ docker run --gpus all -p 8000:8000 deepseek-ocr2-vllm
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `temperature` | 0.0 | Greedy decoding for OCR |
-| `max_tokens` | 4096 | Max output tokens |
-| `ngram_size` | 30 | N-gram repetition check size |
-| `window_size` | 300 | Sliding window (default 90 too small for invoices) |
+| `max_tokens` | 8192 | Max output tokens |
+| `ngram_size` | 20 | N-gram repetition check size (official: 20 for images/PDFs, 40 for batch) |
+| `window_size` | 90 | Sliding window (official: 90 for images, 50 for PDFs) |
 | `whitelist_token_ids` | [128821, 128822] | Table tokens (`<td>`, `</td>`) exempt from ban |

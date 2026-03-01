@@ -30,11 +30,11 @@ export async function runOcr(request: OcrRequest): Promise<OcrResponse> {
         ],
       },
     ],
-    max_tokens: 4096,
+    max_tokens: 8192,
     temperature: 0.0,
     vllm_xargs: {
-      ngram_size: 30,
-      window_size: 300,
+      ngram_size: 20,
+      window_size: 90,
       whitelist_token_ids: [128821, 128822],
     },
   }

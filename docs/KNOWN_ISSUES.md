@@ -61,7 +61,7 @@ llm = LLM(
 
 # Pass parameters per-request via extra_args
 sampling_params = SamplingParams(
-    extra_args={"ngram_size": 30, "window_size": 300, "whitelist_token_ids": [128821, 128822]}
+    extra_args={"ngram_size": 20, "window_size": 90, "whitelist_token_ids": [128821, 128822]}
 )
 ```
 
@@ -76,14 +76,14 @@ sampling_params = SamplingParams(
 // Client: use vllm_xargs (not extra_body or top-level params)
 {
   "vllm_xargs": {
-    "ngram_size": 30,
-    "window_size": 300,
+    "ngram_size": 20,
+    "window_size": 90,
     "whitelist_token_ids": [128821, 128822]
   }
 }
 ```
 
-> **Note:** Default `window_size=90` is too small for documents with large repeating sections (invoices, tables). Use `window_size=300` for better results.
+> **Note:** Official defaults are `ngram_size=20`, `window_size=90` for images and `window_size=50` for PDFs. Repetition issues with these defaults may indicate the transformers accuracy bug (Issue 1).
 ```
 
 ---
